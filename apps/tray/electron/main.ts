@@ -89,8 +89,8 @@ app.on("will-quit", () => {
 });
 
 // Prevent app from quitting when all windows are closed (tray app stays running)
-app.on("window-all-closed", (event: Event) => {
-  event.preventDefault();
+app.on("window-all-closed", () => {
+  // Do nothing — tray app stays running
 });
 
 app.on("second-instance", () => {
