@@ -85,15 +85,16 @@ class SQLiteStore:
         session_type: str,
         title: str | None = None,
         platform: str | None = None,
+        user_id: str | None = None,
     ) -> dict:
         now = datetime.now(timezone.utc).isoformat()
         session_id = str(uuid.uuid4())
         self.conn.execute(
             """INSERT INTO sessions
-               (id, device_id, session_type, title, status, platform,
+               (id, user_id, device_id, session_type, title, status, platform,
                 started_at, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'recording', ?, ?, ?, ?)""",
-            (session_id, device_id, session_type, title, platform, now, now, now),
+               VALUES (?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?)""",
+            (session_id, user_id, device_id, session_type, title, platform, now, now, now),
         )
         self._enqueue_sync("sessions", session_id)
         self.conn.commit()

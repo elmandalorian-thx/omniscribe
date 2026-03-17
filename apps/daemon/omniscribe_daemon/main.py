@@ -50,6 +50,17 @@ def main() -> None:
     store.initialize()
     logger.info("SQLite database initialized at %s", settings.db_path)
 
+    # Start Supabase sync if configured
+    sync = None
+    if settings.supabase_url and settings.supabase_service_key:
+        from omniscribe_daemon.storage.supabase_sync import SupabaseSync
+
+        sync = SupabaseSync(store)
+        sync.start()
+        logger.info("Supabase sync enabled → %s", settings.supabase_url)
+    else:
+        logger.info("Supabase sync disabled (no credentials configured)")
+
     # Start API server (FastAPI + uvicorn)
     from omniscribe_daemon.api.server import create_app
 

@@ -93,6 +93,7 @@ class SupabaseSync:
         # Map SQLite row to Supabase schema
         data = {
             "id": session["id"],
+            "user_id": session["user_id"],
             "device_id": session["device_id"],
             "session_type": session["session_type"],
             "title": session["title"],

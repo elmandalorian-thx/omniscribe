@@ -44,6 +44,7 @@ class Settings(BaseSettings):
 
     # Device identity
     device_id: str | None = None
+    user_id: str | None = None
 
     model_config = {"env_prefix": "OMNISCRIBE_", "env_file": ".env"}
 
