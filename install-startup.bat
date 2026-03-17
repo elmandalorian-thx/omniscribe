@@ -8,8 +8,7 @@ echo Creating tray app startup shortcut...
 (
 echo Set WshShell = CreateObject("WScript.Shell"^)
 echo Set shortcut = WshShell.CreateShortcut("%STARTUP%\OmniScribe Tray.lnk"^)
-echo shortcut.TargetPath = "cmd.exe"
-echo shortcut.Arguments = "/c cd /d ""C:\GIT Folder\Omniscribe\apps\tray"" && npx electron ."
+echo shortcut.TargetPath = "C:\GIT Folder\Omniscribe\apps\tray\launch.bat"
 echo shortcut.WorkingDirectory = "C:\GIT Folder\Omniscribe\apps\tray"
 echo shortcut.WindowStyle = 7
 echo shortcut.Description = "OmniScribe System Tray"
