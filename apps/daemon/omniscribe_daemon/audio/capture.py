@@ -101,47 +101,49 @@ class WASAPILoopbackCapture(AudioCaptureBackend):
             device_channels,
         )
 
+        # Pre-create resampler if needed
+        loopback_resampler = None
+        if device_sample_rate != self.sample_rate:
+            import torchaudio
+            loopback_resampler = torchaudio.transforms.Resample(
+                device_sample_rate, self.sample_rate
+            )
+
         chunk_samples = self.sample_rate * settings.audio_chunk_duration_secs
-        buffer: list[np.ndarray] = []
-        buffer_samples = 0
-        chunk_index = 0
+        self._buffer: list[np.ndarray] = []
+        self._buffer_samples = 0
+        self._chunk_index = 0
 
         def audio_callback(in_data, frame_count, time_info, status):
-            nonlocal buffer, buffer_samples, chunk_index
-
             if not self._is_recording:
                 return (None, pyaudio.paComplete)
 
             # Convert raw bytes to numpy float32
-            audio = np.frombuffer(in_data, dtype=np.float32)
+            audio = np.frombuffer(in_data, dtype=np.float32).copy()
 
             # Downmix to mono if stereo
             if device_channels > 1:
                 audio = audio.reshape(-1, device_channels).mean(axis=1)
 
             # Resample if device rate differs from target
-            if device_sample_rate != self.sample_rate:
-                import torchaudio
+            if loopback_resampler is not None:
+                import torch as _torch
 
-                audio_tensor = __import__("torch").from_numpy(audio).unsqueeze(0)
-                resampler = torchaudio.transforms.Resample(
-                    device_sample_rate, self.sample_rate
-                )
-                audio = resampler(audio_tensor).squeeze(0).numpy()
+                audio_tensor = _torch.from_numpy(audio).unsqueeze(0)
+                audio = loopback_resampler(audio_tensor).squeeze(0).numpy()
 
-            buffer.append(audio)
-            buffer_samples += len(audio)
+            self._buffer.append(audio)
+            self._buffer_samples += len(audio)
 
             # Flush chunk when we have enough
-            if buffer_samples >= chunk_samples:
-                combined = np.concatenate(buffer)[:chunk_samples]
-                path = self._save_chunk(combined, chunk_index)
+            if self._buffer_samples >= chunk_samples:
+                combined = np.concatenate(self._buffer)[:chunk_samples]
+                path = self._save_chunk(combined, self._chunk_index)
                 self._chunk_paths.append(path)
-                chunk_index += 1
-                # Keep remainder
-                remainder = np.concatenate(buffer)[chunk_samples:]
-                buffer = [remainder] if len(remainder) > 0 else []
-                buffer_samples = len(remainder)
+                self._chunk_index += 1
+                remainder = np.concatenate(self._buffer)[chunk_samples:]
+                self._buffer = [remainder] if len(remainder) > 0 else []
+                self._buffer_samples = len(remainder)
 
             return (None, pyaudio.paContinue)
 
@@ -163,6 +165,15 @@ class WASAPILoopbackCapture(AudioCaptureBackend):
             self._stream.stop_stream()
             self._stream.close()
             self._stream = None
+
+        # Flush remaining buffered audio as a final chunk
+        if self._buffer and self._buffer_samples > 0:
+            combined = np.concatenate(self._buffer)
+            if len(combined) > 0:
+                path = self._save_chunk(combined, self._chunk_index)
+                self._chunk_paths.append(path)
+                logger.info("Flushed final chunk: %d samples", len(combined))
+
         logger.info("WASAPI loopback capture stopped, %d chunks saved", len(self._chunk_paths))
         return self._chunk_paths
 
@@ -182,7 +193,27 @@ class MicrophoneCapture(AudioCaptureBackend):
         self._chunk_paths = []
 
         p = pyaudio.PyAudio()
-        default_mic = p.get_default_input_device_info()
+
+        # Find mic by name if configured, otherwise use default
+        mic_name = settings.mic_device_name
+        default_mic = None
+        if mic_name:
+            for i in range(p.get_device_count()):
+                dev = p.get_device_info_by_index(i)
+                if (dev["maxInputChannels"] > 0
+                    and not dev.get("isLoopbackDevice")
+                    and mic_name.lower() in dev["name"].lower()
+                    and dev.get("hostApi") is not None):
+                    # Prefer WASAPI devices (higher hostApi index on Windows)
+                    if default_mic is None or dev["index"] > default_mic["index"]:
+                        default_mic = dev
+            if default_mic:
+                logger.info("Found configured mic '%s': %s", mic_name, default_mic["name"])
+            else:
+                logger.warning("Mic '%s' not found, falling back to default", mic_name)
+
+        if default_mic is None:
+            default_mic = p.get_default_input_device_info()
 
         device_sample_rate = int(default_mic["defaultSampleRate"])
         device_channels = min(default_mic["maxInputChannels"], 1)
@@ -193,39 +224,42 @@ class MicrophoneCapture(AudioCaptureBackend):
             device_sample_rate,
         )
 
+        # Pre-create resampler if needed (avoid recreating per callback)
+        mic_resampler = None
+        if device_sample_rate != self.sample_rate:
+            import torchaudio
+            mic_resampler = torchaudio.transforms.Resample(
+                device_sample_rate, self.sample_rate
+            )
+
         chunk_samples = self.sample_rate * settings.audio_chunk_duration_secs
-        buffer: list[np.ndarray] = []
-        buffer_samples = 0
-        chunk_index = 0
+        self._buffer: list[np.ndarray] = []
+        self._buffer_samples = 0
+        self._chunk_index = 0
 
         def audio_callback(in_data, frame_count, time_info, status):
-            nonlocal buffer, buffer_samples, chunk_index
-
             if not self._is_recording:
                 return (None, pyaudio.paComplete)
 
-            audio = np.frombuffer(in_data, dtype=np.float32)
+            audio = np.frombuffer(in_data, dtype=np.float32).copy()
 
-            if device_sample_rate != self.sample_rate:
-                import torchaudio
+            if mic_resampler is not None:
+                import torch as _torch
 
-                audio_tensor = __import__("torch").from_numpy(audio).unsqueeze(0)
-                resampler = torchaudio.transforms.Resample(
-                    device_sample_rate, self.sample_rate
-                )
-                audio = resampler(audio_tensor).squeeze(0).numpy()
+                audio_tensor = _torch.from_numpy(audio).unsqueeze(0)
+                audio = mic_resampler(audio_tensor).squeeze(0).numpy()
 
-            buffer.append(audio)
-            buffer_samples += len(audio)
+            self._buffer.append(audio)
+            self._buffer_samples += len(audio)
 
-            if buffer_samples >= chunk_samples:
-                combined = np.concatenate(buffer)[:chunk_samples]
-                path = self._save_chunk(combined, chunk_index)
+            if self._buffer_samples >= chunk_samples:
+                combined = np.concatenate(self._buffer)[:chunk_samples]
+                path = self._save_chunk(combined, self._chunk_index)
                 self._chunk_paths.append(path)
-                chunk_index += 1
-                remainder = np.concatenate(buffer)[chunk_samples:]
-                buffer = [remainder] if len(remainder) > 0 else []
-                buffer_samples = len(remainder)
+                self._chunk_index += 1
+                remainder = np.concatenate(self._buffer)[chunk_samples:]
+                self._buffer = [remainder] if len(remainder) > 0 else []
+                self._buffer_samples = len(remainder)
 
             return (None, pyaudio.paContinue)
 
@@ -234,6 +268,7 @@ class MicrophoneCapture(AudioCaptureBackend):
             channels=device_channels or 1,
             rate=device_sample_rate,
             input=True,
+            input_device_index=default_mic["index"],
             frames_per_buffer=1024,
             stream_callback=audio_callback,
         )
@@ -246,6 +281,15 @@ class MicrophoneCapture(AudioCaptureBackend):
             self._stream.stop_stream()
             self._stream.close()
             self._stream = None
+
+        # Flush remaining buffered audio as a final chunk
+        if self._buffer and self._buffer_samples > 0:
+            combined = np.concatenate(self._buffer)
+            if len(combined) > 0:
+                path = self._save_chunk(combined, self._chunk_index)
+                self._chunk_paths.append(path)
+                logger.info("Flushed final chunk: %d samples", len(combined))
+
         logger.info("Microphone capture stopped, %d chunks saved", len(self._chunk_paths))
         return self._chunk_paths
 

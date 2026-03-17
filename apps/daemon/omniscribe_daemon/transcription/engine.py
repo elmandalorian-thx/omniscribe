@@ -82,7 +82,7 @@ def transcribe_audio(audio_path: Path, language: str | None = None) -> Transcrip
             "text": seg.text.strip(),
             "start": seg.start,
             "end": seg.end,
-            "confidence": seg.avg_log_prob,
+            "confidence": getattr(seg, "avg_logprob", getattr(seg, "avg_log_prob", None)),
         })
         full_text_parts.append(seg.text.strip())
 

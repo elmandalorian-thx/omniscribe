@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     audio_channels: int = 1
     audio_chunk_duration_secs: int = 30
     audio_format: str = "wav"
+    mic_device_name: str | None = None  # Substring match, e.g. "Yeti"
 
     # VAD
     vad_silence_threshold_meeting: float = 5.0
