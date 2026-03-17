@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:52849">
   <title>OmniScribe</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -120,11 +120,7 @@
     }
     .btn:hover:not(:disabled) { transform: translateY(-1px); }
     .btn:active:not(:disabled) { transform: translateY(0); }
-    .btn:disabled {
-      opacity: 0.35;
-      cursor: not-allowed;
-      transform: none;
-    }
+    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
     .btn-meeting { background: #4a3aff; color: #fff; }
     .btn-meeting:hover:not(:disabled) { background: #5a4aff; }
@@ -152,10 +148,7 @@
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 8px;
-      cursor: pointer;
-      transition: background 0.15s;
     }
-    .session-card:hover { background: #3d3d5a; }
 
     .session-card .title {
       font-size: 13px;
@@ -244,14 +237,24 @@
   </div>
 
   <script>
-    const api = window.omniscribe;
+    // Direct HTTP API to daemon — no dependency on Electron preload
+    const DAEMON = "http://127.0.0.1:52849";
+
+    async function daemonFetch(path, method = "GET", body = null) {
+      const opts = { method, headers: { "Content-Type": "application/json" } };
+      if (body) opts.body = JSON.stringify(body);
+      const res = await fetch(DAEMON + path, opts);
+      return res.json();
+    }
+
     let isRecording = false;
     let recordingStartedAt = null;
     let timerInterval = null;
 
     async function startMeeting() {
       try {
-        await api.startSession("meeting");
+        const session = await daemonFetch("/sessions/start", "POST", { session_type: "meeting" });
+        setRecordingState(true, "meeting", session.started_at, session.title);
       } catch (err) {
         console.error("Failed to start meeting:", err);
       }
@@ -259,7 +262,8 @@
 
     async function startNote() {
       try {
-        await api.startSession("note");
+        const session = await daemonFetch("/sessions/start", "POST", { session_type: "note" });
+        setRecordingState(true, "note", session.started_at, session.title);
       } catch (err) {
         console.error("Failed to start note:", err);
       }
@@ -267,7 +271,8 @@
 
     async function stopRecording() {
       try {
-        await api.stopSession();
+        await daemonFetch("/sessions/stop", "POST");
+        setRecordingState(false);
       } catch (err) {
         console.error("Failed to stop:", err);
       }
@@ -282,33 +287,21 @@
       const recTitle = document.getElementById("recTitle");
 
       if (recording) {
-        // Badge
         badge.textContent = type === "note" ? "Recording Note" : "Recording Meeting";
         badge.className = "status-badge recording";
-
-        // Hide action buttons, show recording banner
         actions.style.display = "none";
         banner.classList.add("active");
         recLabel.textContent = type === "note" ? "Recording Note" : "Recording Meeting";
         recTitle.textContent = title || "";
-
-        // Start timer
         recordingStartedAt = startedAt ? new Date(startedAt) : new Date();
         startTimer();
       } else {
-        // Badge
         badge.textContent = "Ready";
         badge.className = "status-badge";
-
-        // Show action buttons, hide recording banner
         actions.style.display = "flex";
         banner.classList.remove("active");
-
-        // Stop timer
         stopTimer();
         recordingStartedAt = null;
-
-        // Refresh sessions after a short delay (transcription may be finishing)
         setTimeout(loadSessions, 1000);
         setTimeout(loadSessions, 5000);
       }
@@ -321,10 +314,7 @@
     }
 
     function stopTimer() {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-        timerInterval = null;
-      }
+      if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     }
 
     function updateTimer() {
@@ -332,13 +322,12 @@
       const elapsed = Math.floor((Date.now() - recordingStartedAt.getTime()) / 1000);
       const mins = Math.floor(elapsed / 60);
       const secs = elapsed % 60;
-      document.getElementById("recTimer").textContent =
-        `${mins}:${secs.toString().padStart(2, "0")}`;
+      document.getElementById("recTimer").textContent = `${mins}:${secs.toString().padStart(2, "0")}`;
     }
 
     async function loadSessions() {
       try {
-        const data = await api.listSessions(undefined, 10);
+        const data = await daemonFetch("/sessions?limit=10");
         const list = document.getElementById("sessionsList");
 
         if (!data.sessions || data.sessions.length === 0) {
@@ -373,15 +362,15 @@
       }
     }
 
-    // Poll daemon status every 2 seconds
+    // Poll daemon every 2 seconds to sync recording state
     async function pollStatus() {
       try {
-        const current = await api.getCurrentSession();
-        if (current?.recording && current?.session) {
+        const current = await daemonFetch("/sessions/current");
+        if (current.recording && current.session) {
           if (!isRecording) {
             setRecordingState(true, current.session.session_type, current.session.started_at, current.session.title);
           }
-        } else if (!current?.recording && isRecording) {
+        } else if (!current.recording && isRecording) {
           setRecordingState(false);
         }
       } catch {
@@ -390,16 +379,7 @@
     }
 
     setInterval(pollStatus, 2000);
-
-    // Auto-refresh sessions list every 10 seconds
     setInterval(loadSessions, 10000);
-
-    // Listen for status changes from main process
-    if (api?.onStatusChange) {
-      api.onStatusChange((status) => {
-        pollStatus(); // re-sync state from daemon
-      });
-    }
 
     // Initial load
     loadSessions();
