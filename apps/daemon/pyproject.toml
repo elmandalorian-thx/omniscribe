@@ -1,0 +1,46 @@
+[project]
+name = "omniscribe-daemon"
+version = "0.1.0"
+description = "OmniScribe audio capture and transcription daemon"
+requires-python = ">=3.11"
+dependencies = [
+    "pyaudiowpatch>=0.2.12",
+    "numpy>=1.26.0",
+    "faster-whisper>=1.1.0",
+    "silero-vad>=5.1",
+    "torch>=2.2.0",
+    "torchaudio>=2.2.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.34.0",
+    "httpx>=0.28.0",
+    "supabase>=2.11.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "soundfile>=0.12.1",
+]
+
+[project.optional-dependencies]
+diarization = [
+    "pyannote.audio>=3.3.0",
+]
+groq = [
+    "groq>=0.15.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "ruff>=0.8.0",
+]
+
+[project.scripts]
+omniscribe = "omniscribe_daemon.main:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"

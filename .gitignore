@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.eggs/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Audio files (don't commit recordings)
+*.wav
+*.mp3
+*.ogg
+*.flac
+
+# Local database
+*.db
+*.sqlite
+*.sqlite3
+
+# Electron
+apps/tray/out/
+apps/tray/release/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
