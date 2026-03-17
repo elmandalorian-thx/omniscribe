@@ -79,6 +79,19 @@ class SQLiteStore:
         """)
         logger.info("SQLite tables initialized")
 
+        # Clean up stale sessions from previous crashes/restarts
+        stale = self.conn.execute(
+            "SELECT id FROM sessions WHERE status = 'recording'"
+        ).fetchall()
+        if stale:
+            now = datetime.now(timezone.utc).isoformat()
+            self.conn.execute(
+                "UPDATE sessions SET status = 'failed', updated_at = ? WHERE status = 'recording'",
+                (now,),
+            )
+            self.conn.commit()
+            logger.warning("Cleaned up %d stale recording sessions from previous run", len(stale))
+
     def create_session(
         self,
         device_id: str,
