@@ -42,6 +42,11 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 52849
 
+    # Auto-detection
+    auto_detect_enabled: bool = False
+    auto_detect_interval_secs: int = 5
+    auto_detect_apps: list[str] = ["zoom", "teams", "meet", "slack", "discord"]
+
     # Device identity
     device_id: str | None = None
     user_id: str | None = None

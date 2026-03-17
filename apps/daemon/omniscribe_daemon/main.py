@@ -61,10 +61,23 @@ def main() -> None:
     else:
         logger.info("Supabase sync disabled (no credentials configured)")
 
+    # Start meeting auto-detection monitor if enabled
+    monitor = None
+    if settings.auto_detect_enabled:
+        from omniscribe_daemon.audio.monitor import MeetingMonitor
+        from omniscribe_daemon.session.manager import SessionManager
+
+        manager = SessionManager(store)
+        monitor = MeetingMonitor(manager, interval=settings.auto_detect_interval_secs)
+        monitor.start()
+        logger.info("Auto-detection enabled (interval=%ds)", settings.auto_detect_interval_secs)
+    else:
+        logger.info("Auto-detection disabled (set OMNISCRIBE_AUTO_DETECT_ENABLED=true to enable)")
+
     # Start API server (FastAPI + uvicorn)
     from omniscribe_daemon.api.server import create_app
 
-    app = create_app(store)
+    app = create_app(store, monitor=monitor)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 
 

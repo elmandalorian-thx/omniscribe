@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
   <title>OmniScribe</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -31,11 +31,7 @@
       margin-bottom: 16px;
     }
 
-    .header h1 {
-      font-size: 16px;
-      font-weight: 600;
-      color: #fff;
-    }
+    .header h1 { font-size: 16px; font-weight: 600; color: #fff; }
 
     .status-badge {
       font-size: 12px;
@@ -44,16 +40,15 @@
       background: #2d2d4a;
       color: #888;
     }
-
     .status-badge.recording {
       background: #3d1f1f;
       color: #ff6b6b;
       animation: pulse 2s infinite;
     }
-
     .status-badge.transcribing {
       background: #2d3a1f;
       color: #a8d86e;
+      animation: pulse 3s infinite;
     }
 
     @keyframes pulse {
@@ -61,10 +56,54 @@
       50% { opacity: 0.6; }
     }
 
+    /* Recording banner */
+    .recording-banner {
+      background: linear-gradient(135deg, #3d1f1f, #4a1a2a);
+      border: 1px solid #ff6b6b33;
+      border-radius: 10px;
+      padding: 14px;
+      margin-bottom: 16px;
+      display: none;
+    }
+    .recording-banner.active { display: block; }
+
+    .recording-banner .rec-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .recording-banner .rec-dot {
+      width: 10px; height: 10px;
+      background: #ff4444;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    .recording-banner .rec-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ff8888;
+    }
+    .recording-banner .rec-timer {
+      font-size: 22px;
+      font-weight: 700;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      margin-bottom: 10px;
+    }
+    .recording-banner .rec-title {
+      font-size: 11px;
+      color: #aa7777;
+      margin-bottom: 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
     .actions {
       display: flex;
       gap: 8px;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
       -webkit-app-region: no-drag;
     }
 
@@ -78,28 +117,20 @@
       cursor: pointer;
       transition: all 0.15s;
     }
-
-    .btn:hover { transform: translateY(-1px); }
-    .btn:active { transform: translateY(0); }
-
-    .btn-meeting {
-      background: #4a3aff;
-      color: #fff;
+    .btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .btn:active:not(:disabled) { transform: translateY(0); }
+    .btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+      transform: none;
     }
-    .btn-meeting:hover { background: #5a4aff; }
 
-    .btn-note {
-      background: #2d4a3a;
-      color: #6ee8a8;
-    }
-    .btn-note:hover { background: #3d5a4a; }
-
-    .btn-stop {
-      background: #4a1a1a;
-      color: #ff6b6b;
-      flex: 1;
-    }
-    .btn-stop:hover { background: #5a2a2a; }
+    .btn-meeting { background: #4a3aff; color: #fff; }
+    .btn-meeting:hover:not(:disabled) { background: #5a4aff; }
+    .btn-note { background: #2d4a3a; color: #6ee8a8; }
+    .btn-note:hover:not(:disabled) { background: #3d5a4a; }
+    .btn-stop { background: #4a1a1a; color: #ff6b6b; }
+    .btn-stop:hover:not(:disabled) { background: #5a2a2a; }
 
     .section-title {
       font-size: 11px;
@@ -123,7 +154,6 @@
       cursor: pointer;
       transition: background 0.15s;
     }
-
     .session-card:hover { background: #3d3d5a; }
 
     .session-card .title {
@@ -148,8 +178,8 @@
       padding: 2px 6px;
       border-radius: 4px;
       font-weight: 500;
+      display: inline-block;
     }
-
     .type-badge.meeting { background: #1a2a4a; color: #6b9fff; }
     .type-badge.note { background: #1a3a2a; color: #6ee8a8; }
 
@@ -185,6 +215,18 @@
       <span class="status-badge" id="statusBadge">Ready</span>
     </div>
 
+    <!-- Recording banner (hidden by default) -->
+    <div class="recording-banner" id="recordingBanner">
+      <div class="rec-header">
+        <div class="rec-dot"></div>
+        <span class="rec-label" id="recLabel">Recording Meeting</span>
+      </div>
+      <div class="rec-timer" id="recTimer">0:00</div>
+      <div class="rec-title" id="recTitle"></div>
+      <button class="btn btn-stop" style="width:100%" onclick="stopRecording()">Stop Recording</button>
+    </div>
+
+    <!-- Action buttons (hidden during recording) -->
     <div class="actions" id="actions">
       <button class="btn btn-meeting" id="btnMeeting" onclick="startMeeting()">Start Meeting</button>
       <button class="btn btn-note" id="btnNote" onclick="startNote()">Quick Note</button>
@@ -203,11 +245,12 @@
   <script>
     const api = window.omniscribe;
     let isRecording = false;
+    let recordingStartedAt = null;
+    let timerInterval = null;
 
     async function startMeeting() {
       try {
         await api.startSession("meeting");
-        setRecordingState(true, "meeting");
       } catch (err) {
         console.error("Failed to start meeting:", err);
       }
@@ -216,7 +259,6 @@
     async function startNote() {
       try {
         await api.startSession("note");
-        setRecordingState(true, "note");
       } catch (err) {
         console.error("Failed to start note:", err);
       }
@@ -225,30 +267,72 @@
     async function stopRecording() {
       try {
         await api.stopSession();
-        setRecordingState(false);
-        loadSessions();
       } catch (err) {
         console.error("Failed to stop:", err);
       }
     }
 
-    function setRecordingState(recording, type) {
+    function setRecordingState(recording, type, startedAt, title) {
       isRecording = recording;
       const badge = document.getElementById("statusBadge");
       const actions = document.getElementById("actions");
+      const banner = document.getElementById("recordingBanner");
+      const recLabel = document.getElementById("recLabel");
+      const recTitle = document.getElementById("recTitle");
 
       if (recording) {
+        // Badge
         badge.textContent = type === "note" ? "Recording Note" : "Recording Meeting";
         badge.className = "status-badge recording";
-        actions.innerHTML = '<button class="btn btn-stop" onclick="stopRecording()">Stop Recording</button>';
+
+        // Hide action buttons, show recording banner
+        actions.style.display = "none";
+        banner.classList.add("active");
+        recLabel.textContent = type === "note" ? "Recording Note" : "Recording Meeting";
+        recTitle.textContent = title || "";
+
+        // Start timer
+        recordingStartedAt = startedAt ? new Date(startedAt) : new Date();
+        startTimer();
       } else {
+        // Badge
         badge.textContent = "Ready";
         badge.className = "status-badge";
-        actions.innerHTML = `
-          <button class="btn btn-meeting" onclick="startMeeting()">Start Meeting</button>
-          <button class="btn btn-note" onclick="startNote()">Quick Note</button>
-        `;
+
+        // Show action buttons, hide recording banner
+        actions.style.display = "flex";
+        banner.classList.remove("active");
+
+        // Stop timer
+        stopTimer();
+        recordingStartedAt = null;
+
+        // Refresh sessions after a short delay (transcription may be finishing)
+        setTimeout(loadSessions, 1000);
+        setTimeout(loadSessions, 5000);
       }
+    }
+
+    function startTimer() {
+      stopTimer();
+      updateTimer();
+      timerInterval = setInterval(updateTimer, 1000);
+    }
+
+    function stopTimer() {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+        timerInterval = null;
+      }
+    }
+
+    function updateTimer() {
+      if (!recordingStartedAt) return;
+      const elapsed = Math.floor((Date.now() - recordingStartedAt.getTime()) / 1000);
+      const mins = Math.floor(elapsed / 60);
+      const secs = elapsed % 60;
+      document.getElementById("recTimer").textContent =
+        `${mins}:${secs.toString().padStart(2, "0")}`;
     }
 
     async function loadSessions() {
@@ -267,12 +351,13 @@
           const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
           const duration = s.duration_secs ? `${Math.round(s.duration_secs / 60)}m` : "...";
           const title = s.title || (s.session_type === "note" ? "Voice Note" : "Meeting");
+          const statusIcon = s.status === "transcribing" ? " ..." : "";
 
           return `
             <div class="session-card">
               <div class="title">
                 <span class="type-badge ${s.session_type}">${s.session_type}</span>
-                ${title}
+                ${title}${statusIcon}
               </div>
               <div class="meta">
                 <span>${dateStr} ${timeStr}</span>
@@ -287,33 +372,37 @@
       }
     }
 
+    // Poll daemon status every 2 seconds
+    async function pollStatus() {
+      try {
+        const current = await api.getCurrentSession();
+        if (current?.recording && current?.session) {
+          if (!isRecording) {
+            setRecordingState(true, current.session.session_type, current.session.started_at, current.session.title);
+          }
+        } else if (!current?.recording && isRecording) {
+          setRecordingState(false);
+        }
+      } catch {
+        // Daemon offline
+      }
+    }
+
+    setInterval(pollStatus, 2000);
+
+    // Auto-refresh sessions list every 10 seconds
+    setInterval(loadSessions, 10000);
+
     // Listen for status changes from main process
     if (api?.onStatusChange) {
       api.onStatusChange((status) => {
-        if (status.startsWith("recording")) {
-          setRecordingState(true, status.replace("recording-", ""));
-        } else {
-          setRecordingState(false);
-          loadSessions();
-        }
+        pollStatus(); // re-sync state from daemon
       });
     }
 
     // Initial load
     loadSessions();
-
-    // Check daemon status
-    async function checkStatus() {
-      try {
-        const current = await api.getCurrentSession();
-        if (current?.recording && current?.session) {
-          setRecordingState(true, current.session.session_type);
-        }
-      } catch {
-        // Daemon not ready
-      }
-    }
-    checkStatus();
+    pollStatus();
   </script>
 </body>
 </html>

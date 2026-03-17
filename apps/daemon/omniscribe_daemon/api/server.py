@@ -28,13 +28,17 @@ class SessionResponse(BaseModel):
     word_count: int = 0
 
 
-def create_app(store: SQLiteStore) -> FastAPI:
+def create_app(store: SQLiteStore, monitor=None) -> FastAPI:
     app = FastAPI(title="OmniScribe Daemon", version="0.1.0")
     manager = SessionManager(store)
 
     @app.get("/health")
     def health():
-        return {"status": "ok", "recording": manager.is_recording}
+        return {
+            "status": "ok",
+            "recording": manager.is_recording,
+            "auto_detect": monitor.is_enabled if monitor else False,
+        }
 
     @app.post("/sessions/start")
     def start_session(req: StartSessionRequest):
@@ -55,6 +59,9 @@ def create_app(store: SQLiteStore) -> FastAPI:
         session = manager.stop_session()
         if session is None:
             raise HTTPException(404, "No active session")
+        # Set cooldown on auto-detect so it doesn't immediately re-trigger
+        if monitor:
+            monitor.set_cooldown(30.0)
         return session
 
     @app.get("/sessions/current")
@@ -87,5 +94,19 @@ def create_app(store: SQLiteStore) -> FastAPI:
             raise HTTPException(404, "Session not found")
         segments = store.get_transcript(session_id)
         return {"session_id": session_id, "segments": segments}
+
+    # Auto-detection endpoints
+    @app.get("/auto-detect/status")
+    def auto_detect_status():
+        if not monitor:
+            return {"available": False, "enabled": False}
+        return {"available": True, "enabled": monitor.is_enabled}
+
+    @app.post("/auto-detect/toggle")
+    def auto_detect_toggle():
+        if not monitor:
+            raise HTTPException(404, "Auto-detection not configured")
+        new_state = monitor.toggle()
+        return {"enabled": new_state}
 
     return app
