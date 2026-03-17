@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>OmniScribe</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      overflow: hidden;
+      user-select: none;
+      -webkit-app-region: drag;
+    }
+
+    .container {
+      padding: 16px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #fff;
+    }
+
+    .status-badge {
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 12px;
+      background: #2d2d4a;
+      color: #888;
+    }
+
+    .status-badge.recording {
+      background: #3d1f1f;
+      color: #ff6b6b;
+      animation: pulse 2s infinite;
+    }
+
+    .status-badge.transcribing {
+      background: #2d3a1f;
+      color: #a8d86e;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+      -webkit-app-region: no-drag;
+    }
+
+    .btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn:hover { transform: translateY(-1px); }
+    .btn:active { transform: translateY(0); }
+
+    .btn-meeting {
+      background: #4a3aff;
+      color: #fff;
+    }
+    .btn-meeting:hover { background: #5a4aff; }
+
+    .btn-note {
+      background: #2d4a3a;
+      color: #6ee8a8;
+    }
+    .btn-note:hover { background: #3d5a4a; }
+
+    .btn-stop {
+      background: #4a1a1a;
+      color: #ff6b6b;
+      flex: 1;
+    }
+    .btn-stop:hover { background: #5a2a2a; }
+
+    .section-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #666;
+      margin-bottom: 8px;
+    }
+
+    .sessions {
+      flex: 1;
+      overflow-y: auto;
+      -webkit-app-region: no-drag;
+    }
+
+    .session-card {
+      background: #2d2d4a;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .session-card:hover { background: #3d3d5a; }
+
+    .session-card .title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #fff;
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .session-card .meta {
+      font-size: 11px;
+      color: #888;
+      display: flex;
+      gap: 8px;
+    }
+
+    .type-badge {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+
+    .type-badge.meeting { background: #1a2a4a; color: #6b9fff; }
+    .type-badge.note { background: #1a3a2a; color: #6ee8a8; }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #555;
+      font-size: 13px;
+    }
+
+    .hotkey-hint {
+      font-size: 11px;
+      color: #555;
+      text-align: center;
+      padding: 8px;
+      border-top: 1px solid #2d2d4a;
+      margin-top: auto;
+    }
+
+    kbd {
+      background: #2d2d4a;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>OmniScribe</h1>
+      <span class="status-badge" id="statusBadge">Ready</span>
+    </div>
+
+    <div class="actions" id="actions">
+      <button class="btn btn-meeting" id="btnMeeting" onclick="startMeeting()">Start Meeting</button>
+      <button class="btn btn-note" id="btnNote" onclick="startNote()">Quick Note</button>
+    </div>
+
+    <div class="section-title">Recent Sessions</div>
+    <div class="sessions" id="sessionsList">
+      <div class="empty-state">No sessions yet.<br>Start a meeting or quick note above.</div>
+    </div>
+
+    <div class="hotkey-hint">
+      Quick Note: <kbd>Ctrl+Shift+N</kbd>
+    </div>
+  </div>
+
+  <script>
+    const api = window.omniscribe;
+    let isRecording = false;
+
+    async function startMeeting() {
+      try {
+        await api.startSession("meeting");
+        setRecordingState(true, "meeting");
+      } catch (err) {
+        console.error("Failed to start meeting:", err);
+      }
+    }
+
+    async function startNote() {
+      try {
+        await api.startSession("note");
+        setRecordingState(true, "note");
+      } catch (err) {
+        console.error("Failed to start note:", err);
+      }
+    }
+
+    async function stopRecording() {
+      try {
+        await api.stopSession();
+        setRecordingState(false);
+        loadSessions();
+      } catch (err) {
+        console.error("Failed to stop:", err);
+      }
+    }
+
+    function setRecordingState(recording, type) {
+      isRecording = recording;
+      const badge = document.getElementById("statusBadge");
+      const actions = document.getElementById("actions");
+
+      if (recording) {
+        badge.textContent = type === "note" ? "Recording Note" : "Recording Meeting";
+        badge.className = "status-badge recording";
+        actions.innerHTML = '<button class="btn btn-stop" onclick="stopRecording()">Stop Recording</button>';
+      } else {
+        badge.textContent = "Ready";
+        badge.className = "status-badge";
+        actions.innerHTML = `
+          <button class="btn btn-meeting" onclick="startMeeting()">Start Meeting</button>
+          <button class="btn btn-note" onclick="startNote()">Quick Note</button>
+        `;
+      }
+    }
+
+    async function loadSessions() {
+      try {
+        const data = await api.listSessions(undefined, 10);
+        const list = document.getElementById("sessionsList");
+
+        if (!data.sessions || data.sessions.length === 0) {
+          list.innerHTML = '<div class="empty-state">No sessions yet.<br>Start a meeting or quick note above.</div>';
+          return;
+        }
+
+        list.innerHTML = data.sessions.map(s => {
+          const date = new Date(s.started_at);
+          const timeStr = date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          const dateStr = date.toLocaleDateString([], { month: "short", day: "numeric" });
+          const duration = s.duration_secs ? `${Math.round(s.duration_secs / 60)}m` : "...";
+          const title = s.title || (s.session_type === "note" ? "Voice Note" : "Meeting");
+
+          return `
+            <div class="session-card">
+              <div class="title">
+                <span class="type-badge ${s.session_type}">${s.session_type}</span>
+                ${title}
+              </div>
+              <div class="meta">
+                <span>${dateStr} ${timeStr}</span>
+                <span>${duration}</span>
+                <span>${s.word_count || 0} words</span>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } catch {
+        // Daemon may not be ready yet
+      }
+    }
+
+    // Listen for status changes from main process
+    if (api?.onStatusChange) {
+      api.onStatusChange((status) => {
+        if (status.startsWith("recording")) {
+          setRecordingState(true, status.replace("recording-", ""));
+        } else {
+          setRecordingState(false);
+          loadSessions();
+        }
+      });
+    }
+
+    // Initial load
+    loadSessions();
+
+    // Check daemon status
+    async function checkStatus() {
+      try {
+        const current = await api.getCurrentSession();
+        if (current?.recording && current?.session) {
+          setRecordingState(true, current.session.session_type);
+        }
+      } catch {
+        // Daemon not ready
+      }
+    }
+    checkStatus();
+  </script>
+</body>
+</html>

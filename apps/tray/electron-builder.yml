@@ -1,0 +1,17 @@
+appId: com.omniscribe.tray
+productName: OmniScribe
+directories:
+  output: release
+  buildResources: assets
+files:
+  - dist/**/*
+  - assets/**/*
+  - package.json
+win:
+  target: nsis
+  icon: assets/icon.ico
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+  installerIcon: assets/icon.ico
